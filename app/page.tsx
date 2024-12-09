@@ -457,6 +457,7 @@ export default function Home() {
                 </button>
                 <button
                   className="mt-4 bg-purple-600 hover:bg-purple-700 text-white font-bold py-2 px-4 rounded transition duration-300 ease-in-out transform hover:scale-105 shadow-lg"
+                  disabled={!recipientAddress || isSending}
                   onClick={async () => {
                     try {
                       const result = await approveErc20(
@@ -476,6 +477,7 @@ export default function Home() {
                 </button>
                 <button
                   className="mt-4 bg-purple-600 hover:bg-purple-700 text-white font-bold py-2 px-4 rounded transition duration-300 ease-in-out transform hover:scale-105 shadow-lg"
+                  disabled={!recipientAddress || isSending}
                   onClick={async () => {
                     try {
                       const result = await transferErc20(

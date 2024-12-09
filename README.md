@@ -7,14 +7,18 @@
   </h3>
 </div>
 
-# Particle Connect Authentication via Passkey with Coinbase smart account
+# Particle Connect interact with a smart contract using a smart account
 
-⚡️ Basic demo application using `@particle-network/connectkit` and `@particle-network/aa` to showcase how to leverage a Coinbase smart account with Passkey for onboarding and signing.
+⚡️ Basic demo application using `@particle-network/connectkit` and `@particle-network/aa` to showcase how to interact with a smart contract using the native Particle Connect Provider.
 
 > Note that Account Abstraction is included within the new `connectkit` package. `@particle-network/aa` is required when using an EIP 1193 provider like ethers.js.
-> This demo showcases both options.
 
-This app lets you log in using Passkey, view account information, and send a gasless transfer to an address entered in the UI.
+This app lets you send a native transfer or a USDC transfer on the Sepolia testnet. 
+
+> This is the USDC used on Sepolia testnet in this demo: [0xda9d4f9b69ac6C22e444eD9aF0CfC043b7a7f53f](https://sepolia.etherscan.io/address/0xda9d4f9b69ac6c22e444ed9af0cfc043b7a7f53f)
+
+1. Approve the USDC usage
+2. Send 1 USDC to the address in the input field.
 
 **What is Passkey?**  
 Passkey is a passwordless authentication method that enables users to log in securely using biometric data, device PINs, or other forms of strong authentication, providing a simpler and more secure onboarding experience.
