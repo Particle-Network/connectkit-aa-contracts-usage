@@ -21,7 +21,7 @@ import {
 // Eip1193 and AA Provider
 import { AAWrapProvider, SendTransactionMode } from "@particle-network/aa"; // Only needed with Eip1193 provider
 import { ethers, type Eip1193Provider } from "ethers";
-import { formatEther, parseEther } from "viem";
+import { formatEther, parseEther, formatUnits, encodeFunctionData } from "viem";
 
 export default function Home() {
   const { isConnected, chainId, isConnecting, isDisconnected, chain } =
@@ -33,6 +33,7 @@ export default function Home() {
   const [userAddress, setUserAddress] = useState<string>("");
   const [userInfo, setUserInfo] = useState<Record<string, any> | null>(null);
   const [balance, setBalance] = useState<string | null>(null);
+  const [erc20balance, setErc20Balance] = useState<string | null>(null);
   const [recipientAddress, setRecipientAddress] = useState<string>("");
   const [isSending, setIsSending] = useState<boolean>(false);
   const [transactionHash, setTransactionHash] = useState<string | null>(null);
@@ -56,6 +57,184 @@ export default function Home() {
         "any"
       )
     : null;
+
+  // ERC20 ABI (only approve and transfer)
+  const erc20Abi = [
+    {
+      name: "balanceOf",
+      type: "function",
+      stateMutability: "view",
+      inputs: [{ internalType: "address", name: "account", type: "address" }],
+      outputs: [{ internalType: "uint256", name: "", type: "uint256" }],
+    },
+    {
+      name: "approve",
+      type: "function",
+      stateMutability: "nonpayable",
+      inputs: [
+        { internalType: "address", name: "spender", type: "address" },
+        { internalType: "uint256", name: "amount", type: "uint256" },
+      ],
+      outputs: [{ internalType: "bool", name: "", type: "bool" }],
+    },
+    {
+      name: "transfer",
+      type: "function",
+      stateMutability: "nonpayable",
+      inputs: [
+        { internalType: "address", name: "recipient", type: "address" },
+        { internalType: "uint256", name: "amount", type: "uint256" },
+      ],
+      outputs: [{ internalType: "bool", name: "", type: "bool" }],
+    },
+    {
+      name: "transferFrom",
+      type: "function",
+      stateMutability: "nonpayable",
+      inputs: [
+        { internalType: "address", name: "sender", type: "address" },
+        { internalType: "address", name: "recipient", type: "address" },
+        { internalType: "uint256", name: "amount", type: "uint256" },
+      ],
+      outputs: [{ internalType: "bool", name: "", type: "bool" }],
+    },
+  ];
+
+  /**
+   * Fetches the ERC20 USDC Sepolia balance of a given address. Showcase how to read from a smart contract using publicClient.
+   * @param {string} address - The address to fetch the balance for.
+   */
+  const fetchBalanceErc20 = async (address: string) => {
+    try {
+      const erc20Balance = await publicClient?.readContract({
+        address: "0xda9d4f9b69ac6C22e444eD9aF0CfC043b7a7f53f" as `0x${string}`, // Contract address for USDC on Sepolia
+        abi: erc20Abi,
+        functionName: "balanceOf",
+        args: [address as `0x${string}`], // Wallet address
+      });
+      console.log(erc20Balance);
+      if (typeof erc20Balance === "bigint") {
+        // Format the balance
+        const balanceInEther = formatUnits(erc20Balance, 6);
+        setErc20Balance(balanceInEther.toString());
+      } else {
+        console.error(
+          "Invalid response type for balance:",
+          typeof erc20Balance
+        );
+        setErc20Balance("0.0");
+      }
+    } catch (error) {
+      console.error("Error fetching balance:", error);
+    }
+  };
+
+  /**
+   * Approves a spender to spend a specified amount of ERC-20 tokens on behalf of the caller.
+   * This function simulates the transaction, prepares the necessary data, and sends a gasless transaction.
+   *
+   * @param {`0x${string}`} spender - The address of the spender to approve.
+   * @param {bigint} value - The amount of tokens to approve for spending.
+   * @returns {Promise<void>} - Resolves when the transaction is successfully sent, otherwise throws an error.
+   */
+  const approveErc20 = async (spender: `0x${string}`, value: bigint) => {
+    try {
+      // Encode function data for the transaction
+      const data = encodeFunctionData({
+        abi: erc20Abi,
+        functionName: "approve",
+        args: [spender, value],
+      });
+
+      // Create the transaction object
+      // This tx calls the approve function using the encoded arguments
+      const tx = {
+        to: "0xda9d4f9b69ac6C22e444eD9aF0CfC043b7a7f53f" as `0x${string}`,
+        value: "0x0",
+        data,
+      };
+
+      // Fetch fee quotes and gasless transaction configuration
+      const feeQuotesResult = await smartAccount?.getFeeQuotes(tx);
+      const { userOp, userOpHash } =
+        feeQuotesResult?.verifyingPaymasterGasless || {};
+
+      if (userOp && userOpHash) {
+        // Send the User Operation transaction
+        const txHash =
+          (await smartAccount?.sendUserOperation({
+            userOp,
+            userOpHash,
+          })) || null;
+
+        // Update the state with transaction hash
+        setTransactionHash(txHash);
+        console.log("Transaction sent:", txHash);
+      } else {
+        alert("Failed to generate user operation. Please try again.");
+      }
+    } catch (error) {
+      // Show alert and log error if simulation fails
+      alert(
+        "Error: Failed to simulate the contract interaction. Please check the spender address or value and try again."
+      );
+      console.error("Error simulating contract call:", error);
+      throw error;
+    }
+  };
+
+  /**
+   * Transfers ERC20 tokens to a specified recipient.
+   * This function simulates the transaction, prepares the necessary data, and sends a gasless transaction.
+   *
+   * @param {`0x${string}`} recipient - The address of the recipient to send tokens to.
+   * @param {bigint} value - The amount of tokens to send.
+   * @returns {Promise<void>} - Resolves when the transaction is successfully sent, otherwise throws an error.
+   */
+  const transferErc20 = async (recipient: `0x${string}`, value: bigint) => {
+    try {
+      // Encode function data for the transaction
+      const data = encodeFunctionData({
+        abi: erc20Abi,
+        functionName: "transfer",
+        args: [recipient, value],
+      });
+
+      // Create the transaction object
+      const tx = {
+        to: "0xda9d4f9b69ac6C22e444eD9aF0CfC043b7a7f53f" as `0x${string}`,
+        value: "0x0",
+        data,
+      };
+
+      // Fetch fee quotes and gasless transaction configuration
+      const feeQuotesResult = await smartAccount?.getFeeQuotes(tx);
+      const { userOp, userOpHash } =
+        feeQuotesResult?.verifyingPaymasterGasless || {};
+
+      if (userOp && userOpHash) {
+        // Send the User Operation transaction
+        const txHash =
+          (await smartAccount?.sendUserOperation({
+            userOp,
+            userOpHash,
+          })) || null;
+
+        // Update the state with transaction hash
+        setTransactionHash(txHash);
+        console.log("Transaction sent:", txHash);
+      } else {
+        alert("Failed to generate user operation. Please try again.");
+      }
+    } catch (error) {
+      // Show alert and log error if simulation fails
+      alert(
+        "Error: Failed to simulate the contract interaction. Please check the recipient address or value and try again."
+      );
+      console.error("Error simulating contract call:", error);
+      throw error;
+    }
+  };
 
   /**
    * Fetches the balance of a given address.
@@ -89,6 +268,7 @@ export default function Home() {
           const address = await smartAccount.getAddress();
           setUserAddress(address);
           fetchBalance(address);
+          fetchBalanceErc20(address);
         }
 
         if (isConnected) {
@@ -226,6 +406,15 @@ export default function Home() {
                   🔄
                 </button>
               </h2>
+              <h2 className="text-lg font-semibold mb-2 text-white flex items-center">
+                Sepolia USDC balance: {erc20balance || "Loading..."}
+                <button
+                  className="bg-purple-600 hover:bg-purple-700 text-white font-bold py-1 px-2 ml-2 rounded transition duration-300 ease-in-out transform hover:scale-105 shadow-lg flex items-center"
+                  onClick={() => fetchBalance(userAddress)}
+                >
+                  🔄
+                </button>
+              </h2>
               <button
                 className="mt-4 bg-purple-600 hover:bg-purple-700 text-white font-bold py-2 px-4 rounded transition duration-300 ease-in-out transform hover:scale-105 shadow-lg"
                 onClick={handleOnRamp}
@@ -265,6 +454,44 @@ export default function Home() {
                   {isSending
                     ? "Sending..."
                     : `Send 0.01 ${chain?.nativeCurrency.symbol} ethers`}
+                </button>
+                <button
+                  className="mt-4 bg-purple-600 hover:bg-purple-700 text-white font-bold py-2 px-4 rounded transition duration-300 ease-in-out transform hover:scale-105 shadow-lg"
+                  onClick={async () => {
+                    try {
+                      const result = await approveErc20(
+                        userAddress as `0x${string}`,
+                        BigInt("5000000") // This is USDC so only 6 decimals
+                      );
+                      console.log("Simulation result:", result);
+                    } catch (error) {
+                      console.error(
+                        "Error simulating approve transaction:",
+                        error
+                      );
+                    }
+                  }}
+                >
+                  Approve USDC ERC20
+                </button>
+                <button
+                  className="mt-4 bg-purple-600 hover:bg-purple-700 text-white font-bold py-2 px-4 rounded transition duration-300 ease-in-out transform hover:scale-105 shadow-lg"
+                  onClick={async () => {
+                    try {
+                      const result = await transferErc20(
+                        recipientAddress as `0x${string}`,
+                        BigInt("1000000") // This is USDC so only 6 decimals
+                      );
+                      console.log("Simulation result:", result);
+                    } catch (error) {
+                      console.error(
+                        "Error simulating approve transaction:",
+                        error
+                      );
+                    }
+                  }}
+                >
+                  Send 1 USDC ERC20
                 </button>
               </div>
               {transactionHash && (

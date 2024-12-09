@@ -12,7 +12,7 @@ import { EntryPosition, wallet } from "@particle-network/connectkit/wallet";
 import { aa } from "@particle-network/connectkit/aa";
 // aa end
 // evm start
-import { base, baseSepolia } from "@particle-network/connectkit/chains";
+import { sepolia } from "@particle-network/connectkit/chains";
 import {
   evmWalletConnectors,
   passkeySmartWallet,
@@ -76,12 +76,12 @@ const config = createConfig({
     // aa config start
     // With Passkey auth use Biconomy or Coinbase
     aa({
-      name: "COINBASE",
-      version: "1.0.0",
+      name: "BICONOMY",
+      version: "2.0.0",
     }),
     // aa config end
   ],
-  chains: [base, baseSepolia],
+  chains: [sepolia],
 });
 
 // Wrap your application with this component.
