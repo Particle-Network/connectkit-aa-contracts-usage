@@ -2,7 +2,7 @@ import Image from "next/image";
 
 // Link to repository
 const repositoryLink = {
-  href: "https://github.com/Particle-Network/connectkit-aa-usage",
+  href: "https://github.com/Particle-Network/connectkit-aa-contracts-usage",
   imgSrc: "https://github.githubassets.com/assets/GitHub-Mark-ea2971cee799.png",
   imgAlt: "GitHub Logo",
   text: "Check the repository",
