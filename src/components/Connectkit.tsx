@@ -60,7 +60,7 @@ const config = createConfig({
       },
       walletConnectProjectId: walletConnectProjectId,
       connectorFns: [passkeySmartWallet()],
-      multiInjectedProviderDiscovery: false,
+      multiInjectedProviderDiscovery: true,
     }),
 
     // evm end
