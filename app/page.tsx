@@ -1,5 +1,5 @@
 "use client";
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useCallback, useMemo } from "react";
 import LinksGrid from "@/components/Links";
 import Header from "@/components/Header";
 import { ToastContainer } from "react-toastify";
@@ -22,6 +22,7 @@ import {
 import { AAWrapProvider, SendTransactionMode } from "@particle-network/aa"; // Only needed with Eip1193 provider
 import { ethers, type Eip1193Provider } from "ethers";
 import { formatEther, parseEther, formatUnits, encodeFunctionData } from "viem";
+import useErc20Abi from "@/utils/Erc20Abi";
 
 export default function Home() {
   const { isConnected, chainId, isConnecting, isDisconnected, chain } =
@@ -58,76 +59,40 @@ export default function Home() {
       )
     : null;
 
-  // ERC20 ABI (only approve and transfer)
-  const erc20Abi = [
-    {
-      name: "balanceOf",
-      type: "function",
-      stateMutability: "view",
-      inputs: [{ internalType: "address", name: "account", type: "address" }],
-      outputs: [{ internalType: "uint256", name: "", type: "uint256" }],
-    },
-    {
-      name: "approve",
-      type: "function",
-      stateMutability: "nonpayable",
-      inputs: [
-        { internalType: "address", name: "spender", type: "address" },
-        { internalType: "uint256", name: "amount", type: "uint256" },
-      ],
-      outputs: [{ internalType: "bool", name: "", type: "bool" }],
-    },
-    {
-      name: "transfer",
-      type: "function",
-      stateMutability: "nonpayable",
-      inputs: [
-        { internalType: "address", name: "recipient", type: "address" },
-        { internalType: "uint256", name: "amount", type: "uint256" },
-      ],
-      outputs: [{ internalType: "bool", name: "", type: "bool" }],
-    },
-    {
-      name: "transferFrom",
-      type: "function",
-      stateMutability: "nonpayable",
-      inputs: [
-        { internalType: "address", name: "sender", type: "address" },
-        { internalType: "address", name: "recipient", type: "address" },
-        { internalType: "uint256", name: "amount", type: "uint256" },
-      ],
-      outputs: [{ internalType: "bool", name: "", type: "bool" }],
-    },
-  ];
+  const erc20Abi = useErc20Abi();
 
   /**
    * Fetches the ERC20 USDC Sepolia balance of a given address. Showcase how to read from a smart contract using publicClient.
    * @param {string} address - The address to fetch the balance for.
    */
-  const fetchBalanceErc20 = async (address: string) => {
-    try {
-      const erc20Balance = await publicClient?.readContract({
-        address: "0xda9d4f9b69ac6C22e444eD9aF0CfC043b7a7f53f" as `0x${string}`, // Contract address for USDC on Sepolia
-        abi: erc20Abi,
-        functionName: "balanceOf",
-        args: [address as `0x${string}`], // Wallet address
-      });
-      console.log(erc20Balance);
-      if (typeof erc20Balance === "bigint") {
-        // Format the balance
-        const balanceInEther = formatUnits(erc20Balance, 6);
-        setErc20Balance(balanceInEther.toString());
-      } else {
-        console.error(
-          "Invalid response type for balance:",
-          typeof erc20Balance
-        );
-        setErc20Balance("0.0");
+  const fetchBalanceErc20 = useCallback(
+    async (address: string) => {
+      try {
+        const erc20Balance = await publicClient?.readContract({
+          address:
+            "0xda9d4f9b69ac6C22e444eD9aF0CfC043b7a7f53f" as `0x${string}`, // Contract address for USDC on Sepolia
+          abi: erc20Abi,
+          functionName: "balanceOf",
+          args: [address as `0x${string}`], // Wallet address
+        });
+        console.log(erc20Balance);
+        if (typeof erc20Balance === "bigint") {
+          // Format the balance
+          const balanceInEther = formatUnits(erc20Balance, 6);
+          setErc20Balance(balanceInEther.toString());
+        } else {
+          console.error(
+            "Invalid response type for balance:",
+            typeof erc20Balance
+          );
+          setErc20Balance("0.0");
+        }
+      } catch (error) {
+        console.error("Error fetching balance:", error);
       }
-    } catch (error) {
-      console.error("Error fetching balance:", error);
-    }
-  };
+    },
+    [publicClient, setErc20Balance, erc20Abi]
+  );
 
   /**
    * Approves a spender to spend a specified amount of ERC-20 tokens on behalf of the caller.
@@ -240,23 +205,26 @@ export default function Home() {
    * Fetches the balance of a given address.
    * @param {string} address - The address to fetch the balance for.
    */
-  const fetchBalance = async (address: string) => {
-    try {
-      const balanceResponse = await publicClient?.getBalance({
-        address: address as `0x${string}`,
-      });
+  const fetchBalance = useCallback(
+    async (address: string) => {
+      try {
+        const balanceResponse = await publicClient?.getBalance({
+          address: address as `0x${string}`,
+        });
 
-      if (balanceResponse) {
-        const balanceInEther = formatEther(balanceResponse);
-        setBalance(formatBalance(balanceInEther));
-      } else {
-        console.error("Balance response is undefined");
-        setBalance("0.0");
+        if (balanceResponse) {
+          const balanceInEther = formatEther(balanceResponse);
+          setBalance(formatBalance(balanceInEther));
+        } else {
+          console.error("Balance response is undefined");
+          setBalance("0.0");
+        }
+      } catch (error) {
+        console.error("Error fetching balance:", error);
       }
-    } catch (error) {
-      console.error("Error fetching balance:", error);
-    }
-  };
+    },
+    [publicClient, setBalance]
+  );
 
   /**
    * Loads the user's account data such as address, balance, and user info.
@@ -281,7 +249,14 @@ export default function Home() {
     };
 
     loadAccountData();
-  }, [isConnected, smartAccount, getUserInfo, chainId]);
+  }, [
+    isConnected,
+    smartAccount,
+    getUserInfo,
+    chainId,
+    fetchBalance,
+    fetchBalanceErc20,
+  ]);
 
   /**
    * Handles the on-ramp process by opening the Particle Network Ramp in a new window.
@@ -410,7 +385,7 @@ export default function Home() {
                 Sepolia USDC balance: {erc20balance || "Loading..."}
                 <button
                   className="bg-purple-600 hover:bg-purple-700 text-white font-bold py-1 px-2 ml-2 rounded transition duration-300 ease-in-out transform hover:scale-105 shadow-lg flex items-center"
-                  onClick={() => fetchBalance(userAddress)}
+                  onClick={() => fetchBalanceErc20(userAddress)}
                 >
                   🔄
                 </button>
