@@ -1,78 +1,78 @@
 "use client";
 
 import React from "react";
-
 import { ConnectKitProvider, createConfig } from "@particle-network/connectkit";
-import { authWalletConnectors } from "@particle-network/connectkit/auth";
-import type { Chain } from "@particle-network/connectkit/chains";
-// embedded wallet start
-import { EntryPosition, wallet } from "@particle-network/connectkit/wallet";
-// embedded wallet end
-// aa start
-import { aa } from "@particle-network/connectkit/aa";
-// aa end
-// evm start
-import { sepolia } from "@particle-network/connectkit/chains";
 import {
-  evmWalletConnectors,
-  passkeySmartWallet,
-} from "@particle-network/connectkit/evm";
-// evm end
+  wallet,
+  type EntryPosition,
+} from "@particle-network/connectkit/wallet";
+import { baseSepolia } from "@particle-network/connectkit/chains";
+import { authWalletConnectors } from "@particle-network/connectkit/auth";
+import { aa } from "@particle-network/connectkit/aa";
 
-const projectId = process.env.NEXT_PUBLIC_PROJECT_ID as string;
-const clientKey = process.env.NEXT_PUBLIC_CLIENT_KEY as string;
-const appId = process.env.NEXT_PUBLIC_APP_ID as string;
-const walletConnectProjectId = process.env
-  .NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID as string;
-
-if (!projectId || !clientKey || !appId) {
-  throw new Error("Please configure the Particle project in .env first!");
-}
+// import {
+//   solanaWalletConnectors,
+//   injected as solaInjected,
+// } from "@particle-network/connectkit/solana";
 
 const config = createConfig({
-  projectId,
-  clientKey,
-  appId,
+  projectId: process.env.NEXT_PUBLIC_PROJECT_ID!,
+  clientKey: process.env.NEXT_PUBLIC_CLIENT_KEY!,
+  appId: process.env.NEXT_PUBLIC_APP_ID!,
   appearance: {
-    //  optional, sort wallet connectors
-    connectorsOrder: ["passkey", "social", "wallet"],
     recommendedWallets: [
-      { walletId: "metaMask", label: "Recommended" },
+      { walletId: "phantom", label: "none" },
       { walletId: "coinbaseWallet", label: "Popular" },
+      { walletId: "okxWallet", label: "none" },
+      { walletId: "trustWallet", label: "none" },
+      { walletId: "bitKeep", label: "none" },
     ],
+    splitEmailAndPhone: false,
+    collapseWalletList: false,
+    hideContinueButton: false,
+    connectorsOrder: ["email", "phone", "social", "wallet"],
     language: "en-US",
+    collapsePasskeyButton: true,
   },
   walletConnectors: [
     authWalletConnectors({
-      authTypes: ["google", "apple", "twitter", "github"], // Optional, restricts the types of social logins supported
-    }),
-    // evm start
-    evmWalletConnectors({
-      // TODO: replace it with your app metadata.
-      metadata: {
-        name: "Connectkit Demo",
-        icon:
-          typeof window !== "undefined"
-            ? `${window.location.origin}/favicon.ico`
-            : "",
-        description: "Particle Connectkit Next.js Scaffold.",
-        url: typeof window !== "undefined" ? window.location.origin : "",
+      authTypes: [
+        "google",
+        "apple",
+        "github",
+        "facebook",
+        "twitter",
+        "microsoft",
+        "discord",
+        "twitch",
+        "linkedin",
+        "email",
+      ],
+      fiatCoin: "USD",
+      promptSettingConfig: {
+        promptMasterPasswordSettingWhenLogin: 0,
+        promptPaymentPasswordSettingWhenSign: 0,
       },
-      walletConnectProjectId: walletConnectProjectId,
-      connectorFns: [passkeySmartWallet()],
-      multiInjectedProviderDiscovery: true,
     }),
 
-    // evm end
+    // solanaWalletConnectors({
+    //   connectorFns: [
+    //     solaInjected({ target: "phantom" }),
+    //     solaInjected({ target: "coinbaseWallet" }),
+    //     solaInjected({ target: "okxWallet" }),
+    //     solaInjected({ target: "trustWallet" }),
+    //     solaInjected({ target: "bitKeep" }),
+    //   ],
+    // }),
   ],
   plugins: [
-    // embedded wallet start
     wallet({
+      entryPosition: "bottom-right" as EntryPosition,
       visible: true,
-      entryPosition: EntryPosition.BR,
+      customStyle: {
+        fiatCoin: "USD",
+      },
     }),
-    // embedded wallet end
-
     // aa config start
     // With Passkey auth use Biconomy or Coinbase
     aa({
@@ -81,7 +81,7 @@ const config = createConfig({
     }),
     // aa config end
   ],
-  chains: [sepolia],
+  chains: [baseSepolia],
 });
 
 // Wrap your application with this component.

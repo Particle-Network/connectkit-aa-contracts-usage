@@ -1,15 +1,15 @@
 "use client";
-import React, { useEffect, useState, useCallback, useMemo } from "react";
+
+// React and UI Components
+import React, { useEffect, useState, useCallback } from "react";
 import LinksGrid from "@/components/Links";
 import Header from "@/components/Header";
-import { ToastContainer } from "react-toastify";
+import { ToastContainer, toast } from "react-toastify";
 import "react-toastify/dist/ReactToastify.css";
-
-// Utilities
-import { formatBalance, truncateAddress, copyToClipboard } from "@/utils/utils";
+import ERC20info from "@/components/ERC20Info";
 import TxNotification from "@/components/TxNotification";
 
-// Particle imports
+// Particle Network Imports
 import {
   ConnectButton,
   useAccount,
@@ -17,20 +17,25 @@ import {
   useParticleAuth,
   useSmartAccount,
 } from "@particle-network/connectkit";
+import { AAWrapProvider, SendTransactionMode } from "@particle-network/aa";
 
-// Eip1193 and AA Provider
-import { AAWrapProvider, SendTransactionMode } from "@particle-network/aa"; // Only needed with Eip1193 provider
+// Blockchain Utilities
 import { ethers, type Eip1193Provider } from "ethers";
 import { formatEther, parseEther, formatUnits, encodeFunctionData } from "viem";
 import useErc20Abi from "@/utils/Erc20Abi";
+import { formatBalance, truncateAddress, copyToClipboard } from "@/utils/utils";
+
+// Constants
+const USDC_CONTRACT = "0x036CbD53842c5426634e7929541eC2318f3dCF7e" as const; //USDC on Base Sepolia
+const USDC_DECIMALS = 6;
 
 export default function Home() {
-  const { isConnected, chainId, isConnecting, isDisconnected, chain } =
-    useAccount();
+  const { isConnected, chainId, chain } = useAccount();
   const { getUserInfo } = useParticleAuth();
   const publicClient = usePublicClient();
   const smartAccount = useSmartAccount();
 
+  // State Management
   const [userAddress, setUserAddress] = useState<string>("");
   const [userInfo, setUserInfo] = useState<Record<string, any> | null>(null);
   const [balance, setBalance] = useState<string | null>(null);
@@ -39,16 +44,7 @@ export default function Home() {
   const [isSending, setIsSending] = useState<boolean>(false);
   const [transactionHash, setTransactionHash] = useState<string | null>(null);
 
-  // Connection status message based on the account's connection state
-  const connectionStatus = isConnecting
-    ? "Connecting..."
-    : isConnected
-    ? "Connected"
-    : isDisconnected
-    ? "Disconnected"
-    : "Unknown";
-
-  // Init custom provider with gasless transaction mode
+  // Initialize Ethers provider with Account Abstraction and gasless transactions
   const customProvider = smartAccount
     ? new ethers.BrowserProvider(
         new AAWrapProvider(
@@ -62,141 +58,85 @@ export default function Home() {
   const erc20Abi = useErc20Abi();
 
   /**
-   * Fetches the ERC20 USDC Sepolia balance of a given address. Showcase how to read from a smart contract using publicClient.
-   * @param {string} address - The address to fetch the balance for.
+   * Tutorial: Reading ERC20 Token Balance
+   * This function demonstrates how to read data from a smart contract using
+   * Particle Network's publicClient. It fetches the USDC balance on Sepolia testnet.
+   *
+   * @param {string} address - The address to fetch the balance for
    */
   const fetchBalanceErc20 = useCallback(
     async (address: string) => {
+      if (!publicClient || !address) {
+        toast.error("Missing client or address");
+        return;
+      }
+
       try {
-        const erc20Balance = await publicClient?.readContract({
-          address:
-            "0xda9d4f9b69ac6C22e444eD9aF0CfC043b7a7f53f" as `0x${string}`, // Contract address for USDC on Sepolia
+        const rawBalance = await publicClient.readContract({
+          address: USDC_CONTRACT,
           abi: erc20Abi,
           functionName: "balanceOf",
-          args: [address as `0x${string}`], // Wallet address
+          args: [address as `0x${string}`],
         });
-        console.log(erc20Balance);
-        if (typeof erc20Balance === "bigint") {
-          // Format the balance
-          const balanceInEther = formatUnits(erc20Balance, 6);
-          setErc20Balance(balanceInEther.toString());
+
+        if (typeof rawBalance === "bigint") {
+          setErc20Balance(formatUnits(rawBalance, USDC_DECIMALS));
         } else {
-          console.error(
-            "Invalid response type for balance:",
-            typeof erc20Balance
-          );
           setErc20Balance("0.0");
+          toast.warn("Invalid USDC balance");
         }
-      } catch (error) {
-        console.error("Error fetching balance:", error);
+      } catch {
+        toast.error("Failed to fetch USDC balance");
+        setErc20Balance("0.0");
       }
     },
-    [publicClient, setErc20Balance, erc20Abi]
+    [publicClient, erc20Abi]
   );
 
   /**
-   * Approves a spender to spend a specified amount of ERC-20 tokens on behalf of the caller.
-   * This function simulates the transaction, prepares the necessary data, and sends a gasless transaction.
+   * Tutorial: Transferring ERC20 Tokens
+   * This function demonstrates how to transfer ERC20 tokens to another address
+   * using Account Abstraction for gasless transactions.
    *
-   * @param {`0x${string}`} spender - The address of the spender to approve.
-   * @param {bigint} value - The amount of tokens to approve for spending.
-   * @returns {Promise<void>} - Resolves when the transaction is successfully sent, otherwise throws an error.
-   */
-  const approveErc20 = async (spender: `0x${string}`, value: bigint) => {
-    try {
-      // Encode function data for the transaction
-      const data = encodeFunctionData({
-        abi: erc20Abi,
-        functionName: "approve",
-        args: [spender, value],
-      });
-
-      // Create the transaction object
-      // This tx calls the approve function using the encoded arguments
-      const tx = {
-        to: "0xda9d4f9b69ac6C22e444eD9aF0CfC043b7a7f53f" as `0x${string}`,
-        value: "0x0",
-        data,
-      };
-
-      // Fetch fee quotes and gasless transaction configuration
-      const feeQuotesResult = await smartAccount?.getFeeQuotes(tx);
-      const { userOp, userOpHash } =
-        feeQuotesResult?.verifyingPaymasterGasless || {};
-
-      if (userOp && userOpHash) {
-        // Send the User Operation transaction
-        const txHash =
-          (await smartAccount?.sendUserOperation({
-            userOp,
-            userOpHash,
-          })) || null;
-
-        // Update the state with transaction hash
-        setTransactionHash(txHash);
-        console.log("Transaction sent:", txHash);
-      } else {
-        alert("Failed to generate user operation. Please try again.");
-      }
-    } catch (error) {
-      // Show alert and log error if simulation fails
-      alert(
-        "Error: Failed to simulate the contract interaction. Please check the spender address or value and try again."
-      );
-      console.error("Error simulating contract call:", error);
-      throw error;
-    }
-  };
-
-  /**
-   * Transfers ERC20 tokens to a specified recipient.
-   * This function simulates the transaction, prepares the necessary data, and sends a gasless transaction.
-   *
-   * @param {`0x${string}`} recipient - The address of the recipient to send tokens to.
-   * @param {bigint} value - The amount of tokens to send.
-   * @returns {Promise<void>} - Resolves when the transaction is successfully sent, otherwise throws an error.
+   * @param recipient - The address to receive the tokens
+   * @param value - The amount of tokens to transfer
    */
   const transferErc20 = async (recipient: `0x${string}`, value: bigint) => {
     try {
-      // Encode function data for the transaction
+      // Prepare the transaction data using viem's encodeFunctionData
       const data = encodeFunctionData({
         abi: erc20Abi,
         functionName: "transfer",
         args: [recipient, value],
       });
 
-      // Create the transaction object
-      const tx = {
-        to: "0xda9d4f9b69ac6C22e444eD9aF0CfC043b7a7f53f" as `0x${string}`,
-        value: "0x0",
-        data,
-      };
+      // Simulate the transaction to check for potential errors
+      await publicClient?.simulateContract({
+        address: USDC_CONTRACT,
+        abi: erc20Abi,
+        functionName: "transfer",
+        args: [recipient, value],
+        account: userAddress as `0x${string}`,
+      });
 
-      // Fetch fee quotes and gasless transaction configuration
-      const feeQuotesResult = await smartAccount?.getFeeQuotes(tx);
-      const { userOp, userOpHash } =
-        feeQuotesResult?.verifyingPaymasterGasless || {};
-
-      if (userOp && userOpHash) {
-        // Send the User Operation transaction
-        const txHash =
-          (await smartAccount?.sendUserOperation({
-            userOp,
-            userOpHash,
-          })) || null;
-
-        // Update the state with transaction hash
-        setTransactionHash(txHash);
-        console.log("Transaction sent:", txHash);
-      } else {
-        alert("Failed to generate user operation. Please try again.");
+      if (!customProvider) {
+        throw new Error("Provider not initialized");
       }
+
+      // Get signer and send the transaction
+      const signer = await customProvider.getSigner();
+      const tx = await signer.sendTransaction({
+        to: USDC_CONTRACT,
+        data,
+      });
+
+      // Wait for transaction confirmation
+      const receipt = await tx.wait();
+      setTransactionHash(tx.hash);
+
+      return receipt;
     } catch (error) {
-      // Show alert and log error if simulation fails
-      alert(
-        "Error: Failed to simulate the contract interaction. Please check the recipient address or value and try again."
-      );
-      console.error("Error simulating contract call:", error);
+      console.error("Error in transferErc20:", error);
       throw error;
     }
   };
@@ -229,25 +169,25 @@ export default function Home() {
   /**
    * Loads the user's account data such as address, balance, and user info.
    */
-  useEffect(() => {
-    const loadAccountData = async () => {
-      try {
-        if (isConnected && smartAccount) {
-          const address = await smartAccount.getAddress();
-          setUserAddress(address);
-          fetchBalance(address);
-          fetchBalanceErc20(address);
-        }
-
-        if (isConnected) {
-          const info = getUserInfo();
-          setUserInfo(info);
-        }
-      } catch (error) {
-        console.error("Error loading account data:", error);
+  const loadAccountData = useCallback(async () => {
+    try {
+      if (isConnected && smartAccount) {
+        const address = await smartAccount.getAddress();
+        setUserAddress(address);
+        fetchBalance(address);
+        fetchBalanceErc20(address);
       }
-    };
 
+      if (isConnected) {
+        const info = getUserInfo();
+        setUserInfo(info);
+      }
+    } catch (error) {
+      console.error("Error loading account data:", error);
+    }
+  }, [isConnected, smartAccount, getUserInfo, fetchBalance, fetchBalanceErc20]);
+
+  useEffect(() => {
     loadAccountData();
   }, [
     isConnected,
@@ -256,15 +196,8 @@ export default function Home() {
     chainId,
     fetchBalance,
     fetchBalanceErc20,
+    loadAccountData,
   ]);
-
-  /**
-   * Handles the on-ramp process by opening the Particle Network Ramp in a new window.
-   */
-  const handleOnRamp = () => {
-    const onRampUrl = `https://ramp.particle.network/?fiatCoin=USD&cryptoCoin=ETH&network=Ethereum&theme=dark&language=en`;
-    window.open(onRampUrl, "_blank");
-  };
 
   /**
    * Sends a transaction using the native AA Particle provider with gasless mode.
@@ -274,7 +207,7 @@ export default function Home() {
     try {
       const tx = {
         to: recipientAddress,
-        value: parseEther("0.01").toString(),
+        value: parseEther("0.00000001").toString(),
         data: "0x",
       };
 
@@ -282,7 +215,7 @@ export default function Home() {
       const feeQuotesResult = await smartAccount?.getFeeQuotes(tx);
       const { userOp, userOpHash } =
         feeQuotesResult?.verifyingPaymasterGasless || {};
-
+      console.log(JSON.stringify(feeQuotesResult, null, 2));
       if (userOp && userOpHash) {
         const txHash =
           (await smartAccount?.sendUserOperation({
@@ -291,7 +224,7 @@ export default function Home() {
           })) || null;
 
         setTransactionHash(txHash);
-        console.log("Transaction sent:", txHash);
+        // console.log("Transaction sent:", txHash);
       } else {
         console.error("User operation is undefined");
       }
@@ -329,148 +262,154 @@ export default function Home() {
   };
 
   return (
-    <div className="container min-h-screen flex flex-col justify-center items-center mx-auto gap-4 px-4 md:px-8">
-      <Header />
-      <div className="w-full flex justify-center mt-4">
-        <ConnectButton label="Click to login" />
-      </div>
-      <div className="w-full text-center mb-4 px-4"></div>
-      <div className="bg-gray-800 p-4 rounded-lg shadow-lg w-full sm:w-3/4 md:w-1/2 mb-4">
-        <h2 className="text-md font-semibold text-white text-center">
-          Status: {connectionStatus}
-        </h2>
-      </div>
-      {isConnected ? (
-        <>
-          <div className="grid grid-cols-1 gap-4 md:grid-cols-2 w-full">
-            <div className="border border-purple-500 p-6 rounded-lg w-full">
-              {userInfo && (
-                <div className="flex items-center">
-                  <h2 className="text-lg font-semibold text-white mr-2">
-                    Name: {userInfo.name || "Loading..."}
-                  </h2>
-                  {userInfo.avatar && (
-                    <img
-                      src={userInfo.avatar}
-                      alt="User Avatar"
-                      className="w-10 h-10 rounded-full"
-                    />
-                  )}
+    <>
+      <div className="container min-h-screen mx-auto px-4 py-8">
+        <Header />
+        <div className="w-full flex justify-center mt-4 mb-8">
+          <ConnectButton label="Click to login" />
+        </div>
+
+        {isConnected && (
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-8 max-w-7xl mx-auto">
+            {/* Account Info Section */}
+            <div className="space-y-4">
+              <div className="flex items-center justify-between p-3 bg-gray-700 rounded">
+                <span className="text-purple-300">Network</span>
+                <span>{chain?.name || "Unknown"}</span>
+              </div>
+
+              <div className="flex items-center justify-between p-3 bg-gray-700 rounded">
+                <span className="text-purple-300">Address</span>
+                <div className="flex items-center gap-2">
+                  <span>{truncateAddress(userAddress)}</span>
+                  <button
+                    onClick={() => copyToClipboard(userAddress)}
+                    className="text-purple-300 hover:text-purple-400 transition-colors"
+                    title="Copy address"
+                  >
+                    📋
+                  </button>
                 </div>
-              )}
-              <h2 className="text-lg font-semibold mb-2 text-white flex items-center">
-                Address:{" "}
-                <code>{truncateAddress(userAddress) || "Loading..."}</code>
-                <button
-                  className="bg-purple-600 hover:bg-purple-700 text-white font-bold py-1 px-2 ml-2 rounded transition duration-300 ease-in-out transform hover:scale-105 shadow-lg flex items-center"
-                  onClick={() => copyToClipboard(userAddress)}
-                >
-                  📋
-                </button>
+              </div>
+
+              <div className="flex items-center justify-between p-3 bg-gray-700 rounded">
+                <span className="text-purple-300">Native Balance</span>
+                <span className="flex items-center gap-2">
+                  {balance
+                    ? `${formatBalance(balance)} ${
+                        chain?.nativeCurrency.symbol
+                      }`
+                    : "Loading..."}
+                  <button
+                    onClick={() => fetchBalance(userAddress)}
+                    className="text-purple-300 hover:text-purple-400 transition-colors"
+                    title="Refresh balance"
+                  >
+                    🔁
+                  </button>
+                </span>
+              </div>
+
+              <div className="flex items-center justify-between p-3 bg-gray-700 rounded">
+                <span className="text-purple-300">USDC Balance</span>
+                <span className="flex items-center gap-2">
+                  {erc20balance ? `${erc20balance} USDC` : "Loading..."}
+                  <button
+                    onClick={() => fetchBalanceErc20(userAddress)}
+                    className="text-purple-300 hover:text-purple-400 transition-colors"
+                    title="Refresh USDC balance"
+                  >
+                    🔁
+                  </button>
+                </span>
+              </div>
+              <div className="mt-8">
+                <LinksGrid />
+              </div>
+            </div>
+
+            {/* Gasless Transactions Section */}
+            <div className="border border-purple-500 p-6 rounded-lg bg-gray-800 shadow-xl">
+              <h2 className="text-2xl font-bold mb-6 text-purple-300">
+                Gasless Transactions Demo
               </h2>
 
-              <h2 className="text-lg font-semibold mb-2 text-white">
-                Chain: <code>{chain?.name || "Loading..."}</code>
-              </h2>
-              <h2 className="text-lg font-semibold mb-2 text-white flex items-center">
-                Balance: {balance || "Loading..."}
+              <div className="bg-purple-900/20 p-4 rounded-lg mb-6">
+                <p className="text-sm text-purple-300">
+                  This demo shows how to send transactions without paying gas
+                  fees using Particle Network&apos;s Account Abstraction.
+                </p>
+              </div>
+
+              <div className="space-y-6">
+                <div>
+                  <label className="block text-sm font-medium text-purple-300 mb-2">
+                    Recipient Address
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="0x..."
+                    value={recipientAddress}
+                    onChange={(e) => setRecipientAddress(e.target.value)}
+                    className="w-full p-3 rounded-lg border border-purple-500/30 bg-gray-900 text-white
+                      focus:outline-none focus:ring-2 focus:ring-purple-400 focus:border-transparent
+                      placeholder-gray-500 transition-all duration-200"
+                  />
+                </div>
+
                 <button
-                  className="bg-purple-600 hover:bg-purple-700 text-white font-bold py-1 px-2 ml-2 rounded transition duration-300 ease-in-out transform hover:scale-105 shadow-lg flex items-center"
-                  onClick={() => fetchBalance(userAddress)}
-                >
-                  🔄
-                </button>
-              </h2>
-              <h2 className="text-lg font-semibold mb-2 text-white flex items-center">
-                Sepolia USDC balance: {erc20balance || "Loading..."}
-                <button
-                  className="bg-purple-600 hover:bg-purple-700 text-white font-bold py-1 px-2 ml-2 rounded transition duration-300 ease-in-out transform hover:scale-105 shadow-lg flex items-center"
-                  onClick={() => fetchBalanceErc20(userAddress)}
-                >
-                  🔄
-                </button>
-              </h2>
-              <button
-                className="mt-4 bg-purple-600 hover:bg-purple-700 text-white font-bold py-2 px-4 rounded transition duration-300 ease-in-out transform hover:scale-105 shadow-lg"
-                onClick={handleOnRamp}
-              >
-                Buy Crypto with Fiat
-              </button>
-            </div>
-            <div className="border border-purple-500 p-6 rounded-lg w-full mt-4 md:mt-0">
-              <h2 className="text-2xl font-bold mb-2 text-white">
-                Send a gasless transaction
-              </h2>
-              <h2 className="text-lg">
-                Send 0.01 {chain?.nativeCurrency.symbol}
-              </h2>
-              <input
-                type="text"
-                placeholder="Recipient Address"
-                value={recipientAddress}
-                onChange={(e) => setRecipientAddress(e.target.value)}
-                className="mt-4 p-3 w-full rounded border border-gray-700 bg-gray-900 text-white focus:outline-none focus:ring-2 focus:ring-purple-400"
-              />
-              <div className="flex flex-col gap-4 mt-4">
-                <button
-                  className="bg-purple-600 hover:bg-purple-700 text-white font-bold py-2 px-4 rounded transition duration-300 ease-in-out transform hover:scale-105 shadow-lg"
+                  className="w-full bg-purple-600 hover:bg-purple-700 text-white font-bold py-3 px-4 rounded transition duration-300 ease-in-out transform hover:scale-105 shadow-lg disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
                   onClick={executeTxNative}
                   disabled={!recipientAddress || isSending}
+                  title="Send native tokens using Particle's provider"
                 >
-                  {isSending
-                    ? "Sending..."
-                    : `Send 0.01 ${chain?.nativeCurrency.symbol} Particle provider`}
+                  {isSending ? (
+                    <>
+                      <span>Sending...</span>
+                      <span className="animate-spin">⚡</span>
+                    </>
+                  ) : (
+                    <>
+                      <span>
+                        Send 0.01 {chain?.nativeCurrency.symbol} (Particle AA
+                        Provider)
+                      </span>
+                      <span>⚡</span>
+                    </>
+                  )}
                 </button>
+
                 <button
-                  className="bg-purple-600 hover:bg-purple-700 text-white font-bold py-2 px-4 rounded transition duration-300 ease-in-out transform hover:scale-105 shadow-lg"
+                  className="w-full bg-purple-600 hover:bg-purple-700 text-white font-bold py-3 px-4 rounded transition duration-300 ease-in-out transform hover:scale-105 shadow-lg disabled:opacity-50 disabled:cursor-not-allowed"
                   onClick={executeTxEthers}
                   disabled={!recipientAddress || isSending}
                 >
                   {isSending
                     ? "Sending..."
-                    : `Send 0.01 ${chain?.nativeCurrency.symbol} ethers`}
+                    : `Send 0.01 ${chain?.nativeCurrency.symbol} (Ethers)`}
                 </button>
+
                 <button
-                  className="mt-4 bg-purple-600 hover:bg-purple-700 text-white font-bold py-2 px-4 rounded transition duration-300 ease-in-out transform hover:scale-105 shadow-lg"
+                  className="w-full bg-purple-600 hover:bg-purple-700 text-white font-bold py-3 px-4 rounded transition duration-300 ease-in-out transform hover:scale-105 shadow-lg disabled:opacity-50 disabled:cursor-not-allowed"
                   disabled={!recipientAddress || isSending}
                   onClick={async () => {
                     try {
-                      const result = await approveErc20(
-                        userAddress as `0x${string}`,
-                        BigInt("5000000") // This is USDC so only 6 decimals
-                      );
-                      console.log("Simulation result:", result);
-                    } catch (error) {
-                      console.error(
-                        "Error simulating approve transaction:",
-                        error
-                      );
-                    }
-                  }}
-                >
-                  Approve USDC ERC20
-                </button>
-                <button
-                  className="mt-4 bg-purple-600 hover:bg-purple-700 text-white font-bold py-2 px-4 rounded transition duration-300 ease-in-out transform hover:scale-105 shadow-lg"
-                  disabled={!recipientAddress || isSending}
-                  onClick={async () => {
-                    try {
-                      const result = await transferErc20(
+                      toast.info("Sending USDC...");
+                      await transferErc20(
                         recipientAddress as `0x${string}`,
-                        BigInt("1000000") // This is USDC so only 6 decimals
+                        BigInt(1_000_000)
                       );
-                      console.log("Simulation result:", result);
+                      toast.success("Successfully sent 1 USDC!");
                     } catch (error) {
-                      console.error(
-                        "Error simulating approve transaction:",
-                        error
-                      );
+                      toast.error("Failed to send USDC");
                     }
                   }}
+                  title="Send 1 USDC to the specified address"
                 >
-                  Send 1 USDC ERC20
+                  {isSending ? "Sending..." : "Send 1 USDC"}
                 </button>
               </div>
+
               {transactionHash && (
                 <TxNotification
                   hash={transactionHash}
@@ -479,12 +418,10 @@ export default function Home() {
               )}
             </div>
           </div>
-          <LinksGrid />
-          <ToastContainer />
-        </>
-      ) : (
-        <LinksGrid />
-      )}
-    </div>
+        )}
+        <div className="mt-8 max-w-6xl mx-auto"></div>
+        <ToastContainer />
+      </div>
+    </>
   );
 }

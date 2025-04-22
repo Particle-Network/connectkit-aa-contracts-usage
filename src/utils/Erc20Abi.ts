@@ -41,6 +41,27 @@ const useErc20Abi = () => {
         ],
         outputs: [{ internalType: "bool", name: "", type: "bool" }],
       },
+      {
+        name: "name",
+        type: "function",
+        stateMutability: "view",
+        inputs: [],
+        outputs: [{ internalType: "string", name: "", type: "string" }],
+      },
+      {
+        name: "symbol",
+        type: "function",
+        stateMutability: "view",
+        inputs: [],
+        outputs: [{ internalType: "string", name: "", type: "string" }],
+      },
+      {
+        name: "decimals",
+        type: "function",
+        stateMutability: "view",
+        inputs: [],
+        outputs: [{ internalType: "uint8", name: "", type: "uint8" }],
+      },
     ],
     []
   );
